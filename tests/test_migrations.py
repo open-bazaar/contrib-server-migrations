@@ -1,98 +1,109 @@
 from __future__ import annotations
 
 lazy import asyncio
+lazy from collections.abc import AsyncIterator
 lazy from contextlib import asynccontextmanager
 lazy from pathlib import Path
 
 import aiosqlite
-from bazaar_contrib_schema import ModuleSchema, Schema
-from bazaar_contrib_sqlite import SqliteConfig, open_database
-from bazaar_contrib_storage import Select
-from bazaar_core import Contrib, ContribHub, ContribSpec, load
+from bazaar_core import ContribHub, ContribSpec, load
 
-from bazaar_contrib_server import MODULE
+from bazaar_contrib_server_migrations import MODULE
+
+PACKAGE = "bazaar-contrib-server-migrations"
+NAME = "server.sqlite3"
 
 
 @asynccontextmanager
-async def registered(schema: Schema, module: ModuleSchema):
-    @asynccontextmanager
-    async def lifespan(ctx):
-        async with schema.register(module):
-            yield
-
+async def migrated() -> AsyncIterator[None]:
     composition = await asyncio.to_thread(
-        load, [ContribSpec(contrib="server-migrations")]
-    )
-    composition = composition.model_copy(
-        update={
-            "entries": tuple(
-                entry.model_copy(update={"definition": Contrib(lifespan=lifespan)})
-                for entry in composition.entries
+        load,
+        [
+            ContribSpec(contrib=name, config=config)
+            for name, config in (
+                ("timer-wheel", {}),
+                ("storage", {}),
+                ("sqlite", {"name": NAME}),
+                ("database", {"backend": "sqlite"}),
+                ("schema", {}),
+                ("server-migrations", {}),
             )
-        }
+        ],
     )
     async with ContribHub() as hub, hub.enable(composition):
         yield
 
 
-async def test_published_auth_upgrade_preserves_business_data_and_original_ledger(
+async def restore(path: Path, version: int) -> None:
+    fixtures = (await asyncio.to_thread(Path(__file__).resolve)).parent / "fixtures"
+    dump = await asyncio.to_thread((fixtures / f"server-v{version}.sql").read_text)
+    await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+    async with aiosqlite.connect(path) as connection:
+        await connection.executescript(dump)
+
+
+async def query(path: Path, sql: str, *parameters: object) -> list[tuple[object, ...]]:
+    async with (
+        aiosqlite.connect(path) as connection,
+        connection.execute(sql, parameters) as cursor,
+    ):
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def tables(path: Path) -> set[str]:
+    rows = await query(path, "SELECT name FROM sqlite_master WHERE type = 'table'")
+    return {str(row[0]) for row in rows}
+
+
+async def versions(path: Path) -> list[tuple[object, ...]]:
+    return await query(
+        path,
+        "SELECT version, name FROM contrib_schema_migrations WHERE package = ?",
+        PACKAGE,
+    )
+
+
+async def test_a_published_database_reaches_version_7_with_its_data_and_ledger(
     tmp_path: Path,
 ):
-    fixtures = (await asyncio.to_thread(Path(__file__).resolve)).parent / "fixtures"
-    path = tmp_path / "server.sqlite3"
+    path = tmp_path / ".bcn" / NAME
     expected = tmp_path / "expected.sqlite3"
-    for target, version in ((path, 3), (expected, 7)):
-        dump = await asyncio.to_thread((fixtures / f"server-v{version}.sql").read_text)
-        async with aiosqlite.connect(target) as connection:
-            await connection.executescript(dump)
-    async with (
-        open_database(SqliteConfig(path=path)) as database,
-        open_database(SqliteConfig(path=expected)) as reference,
-    ):
-        original = await database.select(Select(table="schema_migrations"))
-        # Keep the released bridge fixed when new business migrations are added.
-        published = ModuleSchema(
-            tables=MODULE.tables,
-            migrations=MODULE.migrations[:7],
-            progress=MODULE.progress,
-        )
-        schema = Schema(database)
-        await schema.start()
-        async with registered(schema, published):
-            for table in published.tables:
-                if await reference.table_exists(table):
-                    rows = await database.select(Select(table=table))
-                    expected_rows = await reference.select(Select(table=table))
-                    assert sorted(map(repr, rows)) == sorted(
-                        map(repr, expected_rows)
-                    ), table
-        assert await database.select(Select(table="schema_migrations")) == original
+    await restore(path, 3)
+    await restore(expected, 7)
+    original = await query(path, "SELECT * FROM schema_migrations")
+    async with migrated():
+        pass
+    published = await tables(expected)
+    # the original ledger stays as it was published and is compared below
+    for table in sorted(set(MODULE.tables) & published - {"schema_migrations"}):
+        rows = await query(path, f'SELECT * FROM "{table}"')
+        assert sorted(map(repr, rows)) == sorted(
+            map(repr, await query(expected, f'SELECT * FROM "{table}"'))
+        ), table
+    assert await query(path, "SELECT * FROM schema_migrations") == original
+    assert max(int(str(version)) for version, _ in await versions(path)) == (
+        MODULE.version
+    )
 
 
-async def test_new_database_uses_current_baseline_and_retains_new_data(tmp_path: Path):
-    from bazaar_contrib_storage import Insert
+async def test_a_fresh_database_is_left_to_the_modules_that_own_the_tables(
+    tmp_path: Path,
+):
+    async with migrated():
+        pass
+    path = tmp_path / ".bcn" / NAME
+    assert not set(MODULE.tables) & await tables(path)
+    assert not await versions(path)
 
-    path = tmp_path / "fresh.sqlite3"
-    async with open_database(SqliteConfig(path=path)) as database:
-        schema = Schema(database)
-        await schema.start()
-        async with registered(schema, MODULE):
-            await database.insert(
-                Insert(
-                    table="computers",
-                    rows=(
-                        {
-                            "id": "computer",
-                            "name": "Workshop",
-                            "secret_hash": "test-only",
-                            "created_at_ms": 1,
-                        },
-                    ),
-                )
-            )
-        async with registered(schema, MODULE):
-            rows = await database.select(Select(table="computers"))
-            assert rows
-            history = await database.select(Select(table="contrib_schema_migrations"))
-            assert len(history) == 1
-            assert history[0]["version"] == MODULE.version
+
+async def test_restarting_on_a_current_database_repeats_nothing(tmp_path: Path):
+    path = tmp_path / ".bcn" / NAME
+    await restore(path, 7)
+    async with migrated():
+        pass
+    history = await versions(path)
+    computers = await query(path, "SELECT * FROM computers")
+    async with migrated():
+        pass
+    assert await versions(path) == history
+    assert await query(path, "SELECT * FROM computers") == computers
