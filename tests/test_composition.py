@@ -4,15 +4,24 @@ from contextlib import asynccontextmanager
 lazy import asyncio
 lazy from pathlib import Path
 
+import aiosqlite
 from bazaar_contrib_collaboration import COLLABORATION
 from bazaar_contrib_storage import DB, Database, Insert, Select
 from bazaar_core import Context, Contrib, ContribEntry, ContribHub, ContribSpec, load
 
-from bazaar_contrib_server import SERVER_MIGRATIONS
+from bazaar_contrib_server_migrations import SERVER_MIGRATIONS
 
 
 async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path):
     services: list[Database] = []
+    selected = tmp_path / ".bcn" / "selected.sqlite3"
+    # Server tables come from a published database; fresh ones belong to the
+    # modules that own them
+    fixtures = (await asyncio.to_thread(Path(__file__).resolve)).parent / "fixtures"
+    dump = await asyncio.to_thread((fixtures / "server-v3.sql").read_text)
+    await asyncio.to_thread(selected.parent.mkdir, parents=True, exist_ok=True)
+    async with aiosqlite.connect(selected) as connection:
+        await connection.executescript(dump)
 
     @asynccontextmanager
     async def node_consumer(ctx: Context):
@@ -44,7 +53,7 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
                 table="computers",
                 rows=(
                     {
-                        "id": "computer",
+                        "id": "enrolled",
                         "name": "Ready after Server migration",
                         "secret_hash": "test-only",
                         "created_at_ms": 1,
@@ -60,7 +69,7 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
             ContribSpec(contrib=name, config=config)
             for name, config in (
                 ("storage", {}),
-                ("sqlite", {"path": str(tmp_path / "selected.sqlite3")}),
+                ("sqlite", {"name": selected.name}),
                 ("database", {"backend": "sqlite"}),
                 ("schema", {}),
                 ("legacy-node-migrations", {}),
@@ -97,9 +106,8 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
             "value"
         ] == "Ready after Node migration"
         await enabled.update(composition.model_copy(update={"roots": ("server",)}))
-        assert (await services[-1].select(Select(table="computers")))[0][
-            "name"
-        ] == "Ready after Server migration"
+        computers = await services[-1].select(Select(table="computers"))
+        assert "Ready after Server migration" in {row["name"] for row in computers}
         assert (await services[-1].select(Select(table="settings")))[0][
             "value"
         ] == "Ready after Node migration"

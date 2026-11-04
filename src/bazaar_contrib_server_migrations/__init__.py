@@ -1,4 +1,4 @@
-"""Register Server migrations before its business data service starts."""
+"""Complete published Server history before business schemas register."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ SERVER_MIGRATIONS = ServiceKey[ModuleSchema]("server.migrations")
 
 @asynccontextmanager
 async def lifespan(ctx: Context):
-    async with ctx.accept(SCHEMA).register(MODULE):
+    async with ctx.accept(SCHEMA).register(MODULE, upgrade_only=True):
         ctx.offer(SERVER_MIGRATIONS, MODULE)
         yield
 

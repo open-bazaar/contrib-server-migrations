@@ -1,7 +1,7 @@
 [project]
-name = "bazaar-contrib-server"
+name = "bazaar-contrib-server-migrations"
 version = "0.3.0rc1"
-description = "Server plugin for Bazaar Compute Node"
+description = "Published Server 1–7 historical database upgrades"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -10,18 +10,38 @@ dependencies = [
     "bazaar-core~=0.3.0rc1",
     "bazaar-contrib-storage~=0.3.0rc1",
     "bazaar-contrib-schema~=0.3.0rc1",
-    "pydantic>=2.12.0",
 ]
 
-[project.urls]
-Repository = "https://github.com/open-bazaar/contrib-server"
-
 [project.entry-points."bazaar_compute_node.contribs"]
-server-migrations = "bazaar_contrib_server:migrations"
+server-migrations = "bazaar_contrib_server_migrations:migrations"
+
+[project.urls]
+Repository = "https://github.com/open-bazaar/contrib-server-migrations"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:anyio"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+pythonVersion = "3.15"
+pythonPlatform = "All"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+reportMatchNotExhaustive = "error"
+reportUnreachable = "warning"
+reportUnusedFunction = "warning"
+reportUnusedVariable = "warning"
+
+[tool.ruff.lint]
+extend-select = ["ASYNC"]
 
 [dependency-groups]
 dev = [
@@ -37,24 +57,3 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-p no:anyio"
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-
-[tool.pyright]
-include = ["src", "tests"]
-pythonVersion = "3.15"
-pythonPlatform = "All"
-venvPath = "."
-venv = ".venv"
-typeCheckingMode = "basic"
-reportMatchNotExhaustive = "error"
-reportUnreachable = "warning"
-reportUnusedFunction = "warning"
-reportUnusedVariable = "warning"
-
-[tool.ruff.lint]
-extend-select = ["ASYNC", "I"]

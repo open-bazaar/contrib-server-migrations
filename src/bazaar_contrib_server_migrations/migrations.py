@@ -64,34 +64,6 @@ async def login_order(session: s.Session) -> None:
     await transforms.login_order(session)
 
 
-async def baseline(session: s.Session) -> None:
-    await session.apply_schema(
-        (
-            s.CreateTable(table=definitions.ACCOUNTS),
-            s.CreateTable(table=definitions.COMPUTERS_V1),
-            s.CreateTable(table=definitions.RELATIONS_V1),
-            s.CreateTable(table=definitions.REFS_V2),
-            s.CreateTable(table=definitions.ROLES_V3),
-            s.CreateTable(table=definitions.EVENTS_V1),
-            s.CreateTable(table=definitions.ACCOUNT_ROLES_V3),
-            s.CreateTable(table=definitions.AUTH_SETTINGS),
-            s.CreateTable(table=definitions.OIDC_PROVIDERS),
-            s.CreateTable(table=definitions.OIDC_IDENTITIES_V3),
-            s.CreateIndex(table="events", index=definitions.EVENTS_BY_AGENT_V1),
-            s.CreateIndex(table="events", index=definitions.EVENTS_BY_NAME_V1),
-            s.CreateIndex(table="events", index=definitions.EVENTS_BY_THREAD_V1),
-            s.CreateIndex(table="relations", index=definitions.RELATIONS_BY_TARGET_V1),
-            s.CreateIndex(
-                table="account_roles", index=definitions.ACCOUNT_ROLES_BY_ROLE_V3
-            ),
-            s.CreateIndex(
-                table="oidc_identities", index=definitions.OIDC_IDENTITIES_BY_ACCOUNT_V3
-            ),
-        )
-    )
-    await session.insert(s.Insert(table="auth_settings", rows=({"id": 1},)))
-
-
 MODULE = ModuleSchema(
     tables=(
         "account_roles",
@@ -105,6 +77,7 @@ MODULE = ModuleSchema(
         "refs",
         "relations",
         "roles",
+        "schema_migrations",
     ),
     progress=Progress(table="schema_migrations", identity="initial_server_schema"),
     migrations=(
@@ -172,5 +145,4 @@ MODULE = ModuleSchema(
             ),
         ),
     ),
-    baseline=Migration(version=7, name="baseline", apply=baseline),
 )
