@@ -151,11 +151,27 @@ wheels = [
 ]
 
 [[package]]
+name = "bazaar-contrib-server-database"
+version = "0.3.0rc1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bazaar-contrib-schema" },
+    { name = "bazaar-contrib-storage" },
+    { name = "bazaar-core" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/25/aec80db1d1a82d2f14bad4bbeaf5e0597a1b1637808e23d2e49774d92d3d/bazaar_contrib_server_database-0.3.0rc1.tar.gz", hash = "sha256:0768a1c79b2a7b6f3c151fd08ce69436a8961d865bb666a0d1cb62de60606c27", size = 7233, upload-time = "2026-11-05T07:54:51.476Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/89/3e4a9340f4851079fb49afd5f699dd3a8c1a4a698b98a69f06d1974817b7/bazaar_contrib_server_database-0.3.0rc1-py3-none-any.whl", hash = "sha256:cc314d73e612a38ed3411ba3d3b7075e0eef2fa4ebe939417afe55b476c319af", size = 8379, upload-time = "2026-11-05T07:54:50.366Z" },
+]
+
+[[package]]
 name = "bazaar-contrib-server-migrations"
 version = "0.3.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "bazaar-contrib-schema" },
+    { name = "bazaar-contrib-server-database" },
     { name = "bazaar-contrib-storage" },
     { name = "bazaar-core" },
 ]
@@ -178,6 +194,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bazaar-contrib-schema", specifier = "~=0.3.0rc1" },
+    { name = "bazaar-contrib-server-database", specifier = "~=0.3.0rc1" },
     { name = "bazaar-contrib-storage", specifier = "~=0.3.0rc1" },
     { name = "bazaar-core", specifier = "~=0.3.0rc1" },
 ]

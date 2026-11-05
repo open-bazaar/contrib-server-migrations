@@ -10,6 +10,7 @@ dependencies = [
     "bazaar-core~=0.3.0rc1",
     "bazaar-contrib-storage~=0.3.0rc1",
     "bazaar-contrib-schema~=0.3.0rc1",
+    "bazaar-contrib-server-database~=0.3.0rc1",
 ]
 
 [project.entry-points."bazaar_compute_node.contribs"]

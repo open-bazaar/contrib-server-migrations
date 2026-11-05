@@ -11,7 +11,7 @@ from bazaar_core import ContribHub, ContribSpec, load
 from bazaar_contrib_server_migrations import MODULE
 
 PACKAGE = "bazaar-contrib-server-migrations"
-NAME = "server.sqlite3"
+NAME = "bcs.sqlite3"
 
 
 @asynccontextmanager
@@ -22,10 +22,7 @@ async def migrated() -> AsyncIterator[None]:
             ContribSpec(contrib=name, config=config)
             for name, config in (
                 ("timer-wheel", {}),
-                ("storage", {}),
-                ("sqlite", {"name": NAME}),
-                ("database", {"backend": "sqlite"}),
-                ("schema", {}),
+                ("server-database", {}),
                 ("server-migrations", {}),
             )
         ],
