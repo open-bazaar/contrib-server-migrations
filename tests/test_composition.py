@@ -6,28 +6,28 @@ lazy from pathlib import Path
 
 import aiosqlite
 from bazaar_contrib_collaboration import COLLABORATION
+from bazaar_contrib_server_database import SERVER_DB
 from bazaar_contrib_storage import DB, Database, Insert, Select
 from bazaar_core import Context, Contrib, ContribEntry, ContribHub, ContribSpec, load
 
 from bazaar_contrib_server_migrations import SERVER_MIGRATIONS
 
 
-async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path):
-    services: list[Database] = []
-    selected = tmp_path / ".bcn" / "selected.sqlite3"
-    # Server tables come from a published database; fresh ones belong to the
-    # modules that own them
+async def test_the_node_and_the_server_migrate_their_own_databases(tmp_path: Path):
+    databases: dict[str, Database] = {}
+    published = tmp_path / ".bcn" / "bcs.sqlite3"
+    # The server continues a published database; the node starts its own
     fixtures = (await asyncio.to_thread(Path(__file__).resolve)).parent / "fixtures"
     dump = await asyncio.to_thread((fixtures / "server-v3.sql").read_text)
-    await asyncio.to_thread(selected.parent.mkdir, parents=True, exist_ok=True)
-    async with aiosqlite.connect(selected) as connection:
+    await asyncio.to_thread(published.parent.mkdir, parents=True, exist_ok=True)
+    async with aiosqlite.connect(published) as connection:
         await connection.executescript(dump)
 
     @asynccontextmanager
     async def node_consumer(ctx: Context):
         ctx.accept(COLLABORATION)
         db = ctx.accept(DB)
-        services.append(db)
+        databases["node"] = db
         await db.insert(
             Insert(
                 table="settings",
@@ -46,8 +46,8 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
     @asynccontextmanager
     async def server_consumer(ctx: Context):
         ctx.accept(SERVER_MIGRATIONS)
-        db = ctx.accept(DB)
-        services.append(db)
+        db = ctx.accept(SERVER_DB)
+        databases["server"] = db
         await db.insert(
             Insert(
                 table="computers",
@@ -69,7 +69,7 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
             ContribSpec(contrib=name, config=config)
             for name, config in (
                 ("storage", {}),
-                ("sqlite", {"name": selected.name}),
+                ("sqlite", {}),
                 ("database", {"backend": "sqlite"}),
                 ("schema", {}),
                 ("legacy-node-migrations", {}),
@@ -77,6 +77,7 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
                 ("timer-wheel", {}),
                 ("messages-node", {}),
                 ("collaboration", {}),
+                ("server-database", {}),
                 ("server-migrations", {}),
             )
         ],
@@ -94,20 +95,16 @@ async def test_business_roots_select_only_their_migration_plugin(tmp_path: Path)
                 ContribEntry(
                     name="server",
                     definition=Contrib(
-                        accepts=[DB, SERVER_MIGRATIONS], lifespan=server_consumer
+                        accepts=[SERVER_DB, SERVER_MIGRATIONS], lifespan=server_consumer
                     ),
                 ),
-            ),
-            "roots": ("node",),
+            )
         }
     )
-    async with ContribHub() as hub, hub.enable(composition) as enabled:
-        assert (await services[-1].select(Select(table="settings")))[0][
-            "value"
-        ] == "Ready after Node migration"
-        await enabled.update(composition.model_copy(update={"roots": ("server",)}))
-        computers = await services[-1].select(Select(table="computers"))
+    async with ContribHub() as hub, hub.enable(composition):
+        settings = await databases["node"].select(Select(table="settings"))
+        assert "Ready after Node migration" in {row["value"] for row in settings}
+        computers = await databases["server"].select(Select(table="computers"))
         assert "Ready after Server migration" in {row["name"] for row in computers}
-        assert (await services[-1].select(Select(table="settings")))[0][
-            "value"
-        ] == "Ready after Node migration"
+        assert not await databases["node"].table_exists("computers")
+        assert not await databases["server"].table_exists("settings")
