@@ -1,6 +1,6 @@
 [project]
 name = "bazaar-contrib-server-migrations"
-version = "0.3.0rc2"
+version = "0.3.0rc3"
 description = "Published Server 1–7 historical database upgrades, and the events held by id"
 readme = "README.md"
 license = "Apache-2.0"
