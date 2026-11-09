@@ -64,6 +64,83 @@ async def login_order(session: s.Session) -> None:
     await transforms.login_order(session)
 
 
+async def events_by_id(session: s.Session) -> None:
+    """The events let go of their computer: a computer is removed without
+    first removing what it reported, which the module holding the events
+    removes itself; every row and index stays as it was, and the ids go on
+    above the highest the events ever had."""
+    indexes = (
+        definitions.EVENTS_BY_AGENT_V1,
+        definitions.EVENTS_BY_NAME_V1,
+        definitions.EVENTS_BY_THREAD_V1,
+    )
+    # the highest id ever given, which SQLite keeps beside the table and the
+    # rows left may fall short of; the rebuilt table starts without it
+    given = await session.select(
+        s.Select(
+            table="sqlite_sequence",
+            columns={"seq": s.Column(name="seq")},
+            where=s.Compare(
+                left=s.Column(name="name"), operator="=", right=s.Value(value="events")
+            ),
+        )
+    )
+    await session.apply_schema(
+        (
+            *(s.DropIndex(table="events", name=index.name) for index in indexes),
+            s.RenameTable(table="events", name="_events_v7"),
+            s.CreateTable(table=definitions.EVENTS_V8),
+        )
+    )
+    if given:
+        # a row at that id, taken away again, leaves it recorded for the new table
+        await session.insert(
+            s.Insert(
+                table="events",
+                rows=(
+                    {
+                        "id": given[0]["seq"],
+                        "computer_id": "",
+                        "run_id": "",
+                        "seq": 0,
+                        "event_name": "",
+                        "created_at_ms": 0,
+                        "received_at_ms": 0,
+                        "payload": "",
+                    },
+                ),
+            )
+        )
+        await session.delete(
+            s.Delete(
+                table="events",
+                where=s.Compare(
+                    left=s.Column(name="id"),
+                    operator="=",
+                    right=s.Value(value=given[0]["seq"]),
+                ),
+            )
+        )
+    await session.copy(
+        s.Copy(
+            table="events",
+            query=s.Select(
+                table="_events_v7",
+                columns={
+                    column.name: s.Column(name=column.name)
+                    for column in definitions.EVENTS_V8.columns
+                },
+            ),
+        )
+    )
+    await session.apply_schema(
+        (
+            s.DropTable(table="_events_v7"),
+            *(s.CreateIndex(table="events", index=index) for index in indexes),
+        )
+    )
+
+
 MODULE = ModuleSchema(
     tables=(
         "account_roles",
@@ -71,6 +148,7 @@ MODULE = ModuleSchema(
         "auth_settings",
         "computers",
         "events",
+        "_events_v7",
         "oidc_identities",
         "oidc_providers",
         "oidc_transactions",
@@ -144,5 +222,6 @@ MODULE = ModuleSchema(
                 s.DropTable(table="oidc_transactions"),
             ),
         ),
+        Migration(version=8, name="events_by_id", apply=events_by_id),
     ),
 )
