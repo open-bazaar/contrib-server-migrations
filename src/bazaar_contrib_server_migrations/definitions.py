@@ -45,6 +45,24 @@ EVENTS_V1 = s.Table(
     primary_key=("id",),
     unique=(("computer_id", "run_id", "seq"),),
 )
+# the events held by their computer's id alone
+EVENTS_V8 = s.Table(
+    name="events",
+    columns=(
+        s.ColumnDefinition(name="id", type="integer", nullable=True, generated=True),
+        s.ColumnDefinition(name="computer_id", type="text"),
+        s.ColumnDefinition(name="run_id", type="text"),
+        s.ColumnDefinition(name="seq", type="integer"),
+        s.ColumnDefinition(name="agent_id", type="text", nullable=True),
+        s.ColumnDefinition(name="event_name", type="text"),
+        s.ColumnDefinition(name="thread_id", type="text", nullable=True),
+        s.ColumnDefinition(name="created_at_ms", type="integer"),
+        s.ColumnDefinition(name="received_at_ms", type="integer"),
+        s.ColumnDefinition(name="payload", type="text"),
+    ),
+    primary_key=("id",),
+    unique=(("computer_id", "run_id", "seq"),),
+)
 EVENTS_BY_AGENT_V1 = s.Index(
     name="events_by_agent", columns=("computer_id", "agent_id", "id")
 )
